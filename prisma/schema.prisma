@@ -1,0 +1,147 @@
+// Plotline — AI Series Bible & Continuity Checker
+// Domain: serial fiction authors managing multi-book universes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  plan          Plan     @default(FREE)
+  stripeId      String?  @unique
+  createdAt     DateTime @default(now())
+  series        Series[]
+}
+
+enum Plan {
+  FREE
+  AUTHOR
+  PRO
+}
+
+model Series {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  genre       String?
+  synopsis    String?
+  createdAt   DateTime @default(now())
+  books       Book[]
+  entities    Entity[]
+  facts       Fact[]
+  continuityIssues ContinuityIssue[]
+
+  @@index([userId])
+}
+
+model Book {
+  id           String   @id @default(cuid())
+  seriesId     String
+  series       Series   @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  title        String
+  orderIndex   Int
+  manuscript   String   @db.Text
+  wordCount    Int      @default(0)
+  status       BookStatus @default(DRAFT)
+  extractedAt  DateTime?
+  createdAt    DateTime @default(now())
+  facts        Fact[]
+  chapters     Chapter[]
+
+  @@index([seriesId, orderIndex])
+}
+
+enum BookStatus {
+  DRAFT
+  EXTRACTING
+  READY
+  FAILED
+}
+
+model Chapter {
+  id        String  @id @default(cuid())
+  bookId    String
+  book      Book    @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  number    Int
+  title     String?
+  content   String  @db.Text
+
+  @@index([bookId, number])
+}
+
+model Entity {
+  id          String     @id @default(cuid())
+  seriesId    String
+  series      Series     @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  type        EntityType
+  name        String
+  aliases     String[]
+  summary     String?    @db.Text
+  attributes  Json       @default("{}")
+  firstBookId String?
+  createdAt   DateTime   @default(now())
+  facts       Fact[]
+
+  @@index([seriesId, type])
+  @@unique([seriesId, type, name])
+}
+
+enum EntityType {
+  CHARACTER
+  LOCATION
+  ITEM
+  ORGANIZATION
+  EVENT
+  CONCEPT
+}
+
+// A Fact is an atomic claim about an entity, sourced to a book/chapter.
+// Continuity = detecting two facts about the same (entity, attribute) that contradict.
+model Fact {
+  id         String   @id @default(cuid())
+  seriesId   String
+  series     Series   @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  bookId     String
+  book       Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  attribute  String   // e.g. "eye_color", "occupation", "age", "relationship:spouse"
+  value      String
+  excerpt    String?  @db.Text
+  chapterRef String?
+  createdAt  DateTime @default(now())
+
+  @@index([seriesId, entityId, attribute])
+  @@index([bookId])
+}
+
+model ContinuityIssue {
+  id         String   @id @default(cuid())
+  seriesId   String
+  series     Series   @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  entityId   String
+  attribute  String
+  factAId    String
+  factBId    String
+  severity   Severity @default(MEDIUM)
+  resolved   Boolean  @default(false)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([seriesId, resolved])
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+}
